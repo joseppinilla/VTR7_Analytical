@@ -111,7 +111,7 @@ void vpr_print_usage(void) {
 	vpr_printf(TIO_MESSAGE_INFO, "\n");
 	vpr_printf(TIO_MESSAGE_INFO, "Placer Options:\n");
 	vpr_printf(TIO_MESSAGE_INFO,
-			"\t[--place_algorithm bounding_box | net_timing_driven | path_timing_driven]\n");
+			"\t[--place_algorithm bounding_box | net_timing_driven | path_timing_driven | analytical]\n");
 	vpr_printf(TIO_MESSAGE_INFO, "\t[--init_t <float>] [--exit_t <float>]\n");
 	vpr_printf(TIO_MESSAGE_INFO,
 			"\t[--alpha_t <float>] [--inner_num <float>] [--seed <int>]\n");

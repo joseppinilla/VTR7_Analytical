@@ -883,6 +883,10 @@ ReadPlaceAlgorithm(INP char **Args, OUTP enum e_place_algorithm *Algo) {
 	case OT_PATH_TIMING_DRIVEN:
 		*Algo = PATH_TIMING_DRIVEN_PLACE;
 		break;
+	case OT_ANALYTICAL:
+        *Algo = ANALYTICAL_PLACE;
+        break;
+
 	default:
 		Error(*PrevArgs);
 	}

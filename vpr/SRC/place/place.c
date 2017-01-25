@@ -5,6 +5,9 @@
 #include "util.h"
 #include "vpr_types.h"
 #include "globals.h"
+#include <string.h>
+#include "unistd.h"
+#include "quadratic.h"
 #include "place.h"
 #include "read_place.h"
 #include "draw.h"
@@ -206,6 +209,24 @@ static const float cross_count[50] = { /* [0..49] */1.0, 1.0, 1.0, 1.0828, 1.153
 	static void print_clb_placement(const char *fname);
 #endif
 
+//Analytical Placement
+static void print_solution(s_block ** blocks);
+
+bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim);
+
+int count_free_locs(int startx, int endx, int starty, int endy);
+
+int count_free_blocks(int startx, int endx, int starty, int endy);
+
+static void free_quadratic(double* matrix, double* vectorx, double* vectory, double* solx, double* soly);
+
+//static void print_quadratic(int** quadratic_form, int* vectorx, int* vectory);
+
+static void alloc_and_load_quadratic(double** matrix_ptr, double** vectorx_ptr, double** vectory_ptr, double** solx_ptr, double** soly_ptr);
+
+static void legalize_quadratic_solution();
+//
+
 static void alloc_and_load_placement_structs(
 		float place_cost_exp, float ***old_region_occ_x,
 		float ***old_region_occ_y, struct s_placer_opts placer_opts,
@@ -236,7 +257,10 @@ static void initial_placement_blocks(int * free_locations, enum e_pad_loc_type p
 
 static void initial_placement(enum e_pad_loc_type pad_loc_type,
 		char *pad_loc_file);
-
+		
+static void pad_placement(enum e_pad_loc_type pad_loc_type,
+        char *pad_loc_file);
+		
 static float comp_bb_cost(enum cost_methods method);
 
 static int setup_blocks_affected(int b_from, int x_to, int y_to, int z_to);
@@ -304,8 +328,440 @@ static double get_net_wirelength_estimate(int inet, struct s_bb *bbptr);
 
 static void free_try_swap_arrays(void);
 
-
 /*****************************************************************************/
+
+//#define ANALYTICAL_ON
+
+void analytical_place(
+		struct s_placer_opts placer_opts,
+		struct s_annealing_sched annealing_sched,
+		t_chan_width_dist chan_width_dist, struct s_router_opts router_opts,
+		struct s_det_routing_arch *det_routing_arch, t_segment_inf * segment_inf,
+		t_timing_inf timing_inf, t_direct_inf *directs, int num_directs) {
+
+	/* Does almost all the work of placing a circuit.  Width_fac gives the   *
+	 * width of the widest channel.  Place_cost_exp says what exponent the   *
+	 * width should be taken to when calculating costs.  This allows a       *
+	 * greater bias for anisotropic architectures.                           */
+
+	int i, width_fac, num_connections;
+	float **old_region_occ_x, **old_region_occ_y, **net_delay = NULL, **remember_net_delay_original_ptr; /*used to free net_delay if it is re-assigned */
+	char msg[BUFSIZE];
+	t_slack * slacks = NULL;
+
+	/* Allocated here because it goes into timing critical code where each memory allocation is expensive */
+
+	remember_net_delay_original_ptr = NULL; /*prevents compiler warning */
+
+	/* init file scope variables */
+	num_swap_rejected = 0;
+	num_swap_accepted = 0;
+	num_swap_aborted = 0;
+	num_ts_called = 0;
+
+	slacks = alloc_lookups_and_criticalities(chan_width_dist, router_opts,
+				det_routing_arch, segment_inf, timing_inf, &net_delay, directs, num_directs);
+
+	remember_net_delay_original_ptr = net_delay;
+
+	width_fac = placer_opts.place_chan_width;
+
+	init_chan(width_fac, &router_opts.fixed_channel_width, chan_width_dist);
+
+	alloc_and_load_placement_structs(
+			placer_opts.place_cost_exp,
+			&old_region_occ_x, &old_region_occ_y, placer_opts,
+			directs, num_directs, det_routing_arch->num_segment);
+
+	pad_placement(placer_opts.pad_loc_type, placer_opts.pad_loc_file);
+	init_draw_coords((float) width_fac);
+
+	num_connections = count_connections();
+
+	vpr_printf_info("\n");
+	vpr_printf_info("There are %d point to point connections in this circuit.\n", num_connections);
+	vpr_printf_info("\n");
+
+	vpr_printf_info("There are %d io blocks, %d free blocks and %d total blocks.\n", num_io_blocks, num_free_blocks,num_blocks);
+
+	double *quadratic_form;
+	double *vectorx,*vectory;
+	double *solx, *soly;
+
+	alloc_and_load_quadratic(&quadratic_form,&vectorx,&vectory,&solx,&soly);
+
+	solve_linear_system(solx,quadratic_form,vectorx,num_free_blocks);
+
+	solve_linear_system(soly,quadratic_form,vectory,num_free_blocks);
+
+	for (i = 0; i < num_free_blocks; i++) {
+		freeblock[i]->quadx = solx[i];
+		freeblock[i]->quady = soly[i];
+	}
+
+	free_quadratic(quadratic_form,vectorx,vectory,solx,soly);
+
+	legalize_quadratic_solution();
+
+	update_screen(MAJOR, msg, PLACEMENT, false, timing_inf);
+
+	free_placement_structs(
+				old_region_occ_x, old_region_occ_y,
+				placer_opts);
+	if (placer_opts.place_algorithm == NET_TIMING_DRIVEN_PLACE
+			|| placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE
+			|| placer_opts.enable_timing_computations) {
+
+		net_delay = remember_net_delay_original_ptr;
+		free_lookups_and_criticalities(&net_delay, slacks);
+	}
+
+	free_try_swap_arrays();
+
+	free_timing_graph(slacks);
+
+}
+
+static void free_quadratic(double* matrix, double* vectorx, double* vectory, double* solx, double* soly) {
+	free(matrix);
+	free(solx);
+	free(soly);
+	free(vectorx);
+	free(vectory);
+}
+
+
+static void print_solution(s_block ** blocks) {
+	int i;
+	vpr_printf_info("SOLUTION\n");
+	for (i = 0; i < num_free_blocks; i++) {
+		vpr_printf_info("X %f  Y  %f\n",blocks[i]->quadx,blocks[i]->quady);
+	}
+}
+
+
+static void alloc_and_load_quadratic(double** matrix_ptr, double** vectorx_ptr, double** vectory_ptr, double** solx_ptr, double** soly_ptr) {
+	int ipin,iblock,isink,inet,node,node_free_id;
+
+	double *matrix;
+	double *vectorx, *vectory;
+	double *solx, *soly;
+
+	if ((matrix = (double*) calloc( num_free_blocks*num_free_blocks, sizeof(double))) == NULL){
+		//TODO: Throw error
+	}
+
+	if ((vectorx =  (double*) calloc( num_free_blocks, sizeof(double))) == NULL) {
+		//TODO: Throw error
+	}
+
+	if ((vectory =  (double*) calloc( num_free_blocks, sizeof(double))) == NULL) {
+		//TODO: Throw error
+	}
+
+	if ((solx =  (double*) calloc( num_free_blocks, sizeof(double))) == NULL) {
+		//TODO: Throw error
+	}
+
+	if ((soly =  (double*) calloc( num_free_blocks, sizeof(double))) == NULL) {
+		//TODO: Throw error
+	}
+
+	for (iblock = 0; iblock < num_free_blocks; iblock++) {
+
+		for (ipin = 0; ipin < freeblock[iblock]->type->num_pins; ipin++) {
+			inet = freeblock[iblock]->nets[ipin];
+			if (inet != OPEN){
+				for (isink = 0; isink <  clb_net[inet].num_sinks; isink++) {
+					node = clb_net[inet].node_block[isink];
+
+					matrix[(iblock*num_free_blocks) + iblock] += 1;
+					if (block[node].type == IO_TYPE) {
+						vectorx[iblock] += block[node].x;
+						vectory[iblock] += block[node].y;
+					} else {
+						if ((iblock!=(node_free_id = block[node].free_id))){
+							matrix[(iblock*num_free_blocks) + node_free_id] = -1;
+							matrix[(node_free_id*num_free_blocks) + iblock] = -1;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	*matrix_ptr = matrix;
+	*vectorx_ptr = vectorx;
+	*vectory_ptr = vectory;
+	*solx_ptr = solx;
+	*soly_ptr = soly;
+}
+
+int cmpfncx(const void *v1, const void *v2) {
+	struct s_block *u1 = *( struct s_block * const *) v1;
+	struct s_block *u2 = *( struct s_block *const *) v2;
+
+	return  (int) (100.f*(u1->quadx)) - (100.f*(u2->quadx));
+}
+
+int cmpfncy(const void *v1, const void *v2) {
+	struct s_block *u1 = *( struct s_block * const *) v1;
+	struct s_block *u2 = *( struct s_block *const *) v2;
+
+	return  (int) (100.f*(u1->quady)) - (100.f*(u2->quady));
+}
+
+static void legalize_quadratic_solution() {
+	int iblk, x, y, z;
+	double highestx=0,highesty=0,highest;
+
+	if ((freeblock_sortx =  (struct s_block **) calloc( num_free_blocks,sizeof(struct s_block*))) == NULL ) {
+		//TODO: Throw error
+	}
+	memcpy(freeblock_sortx,freeblock,num_free_blocks*sizeof(struct s_block *));
+
+	if ((freeblock_sorty =  (struct s_block **) calloc( num_free_blocks,sizeof(struct s_block*))) == NULL ) {
+		//TODO: Throw error
+	}
+	memcpy(freeblock_sorty,freeblock,num_free_blocks*sizeof(struct s_block *));
+
+	//Sort normalized values depending on distance x
+	qsort(freeblock_sortx,num_free_blocks,sizeof(struct s_block*),cmpfncx);
+
+	//Sort normalized values depending on distance y
+	qsort(freeblock_sorty,num_free_blocks,sizeof(struct s_block*),cmpfncy);
+
+	// Normalize x and y solutions to spread blocks
+	for (iblk = 0; iblk < num_free_blocks; iblk++) {
+		if (freeblock[iblk]->quadx>highestx) {
+			highestx = freeblock[iblk]->quadx;
+		}
+		if (freeblock[iblk]->quady>highesty) {
+			highesty = freeblock[iblk]->quady;
+		}
+	}
+	highest = (highestx>highesty) ? highestx : highesty;
+	// This assigns to the value in the block itself, no need to update sorted arrays
+
+	double temp_nx = nx - 0.1;
+	double temp_ny = ny - 0.1;
+	for (iblk = 0; iblk < num_free_blocks; iblk++) {
+		freeblock[iblk]->quadx = freeblock[iblk]->quadx*(temp_nx/highest);
+		freeblock[iblk]->quady = freeblock[iblk]->quady*(temp_ny/highest);
+	}
+
+	print_solution(freeblock);
+
+	/* Recursively find if free moving blocks fit in partitions, when blocks are higher
+	 * than the number of free locations, move boundary blocks over the cut and try again
+	 */
+	partitioning(0,nx,0,ny,true);
+
+	print_solution(freeblock);
+
+	for (iblk = 0; iblk < num_free_blocks; iblk++) {
+		x = (int) freeblock[iblk]->quadx+1;
+		y = (int) freeblock[iblk]->quady+1;
+		z = 0;
+		// Make sure that the position is OPEN before placing the block down
+		assert (grid[x][y].blocks[z] == OPEN);
+
+		grid[x][y].blocks[z] = freeblock[iblk]->id;
+		grid[x][y].usage++;
+
+		freeblock[iblk]->x = x;
+		freeblock[iblk]->y = y;
+		freeblock[iblk]->z = z;
+	}
+}
+
+bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
+	int free_locs1, free_locs2;
+	int free_blocks1, free_blocks2;
+
+	int startx1,starty1,endx1,endy1;
+	int startx2,starty2,endx2,endy2;
+
+
+	if (toggleDim == true) {
+		startx1 = startx;
+		endx1 = (endx/2) + (endx%2);
+		starty1 = starty;
+		endy1 = endy;
+
+		startx2 = (endx/2)+(endx%2);
+		endx2 = endx;
+		starty2 = starty;
+		endy2 = endy;
+
+	} else {
+		startx1 = startx;
+		endx1 = endx;
+		starty1 = starty;
+		endy1 = (endy/2)+(endy%2) ;
+
+		startx2 = startx;
+		endx2 = endx;
+		starty2 = (endy/2)+(endy%2);
+		endy2 = endy;
+	}
+
+	vpr_printf_info("RANGE	X1 %d-%d	Y1 %d-%d	X2 %d-%d	Y2 %d-%d\n",
+			startx1,endx1,starty1,endy1,startx2,endx2,starty2,endy2);
+
+	free_locs1 = count_free_locs(startx1,endx1,starty1,endy1);
+	free_locs2 = count_free_locs(startx2,endx2,starty2,endy2);
+
+	free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
+	free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
+
+	vpr_printf_info("LOCS %d    %d\n",free_locs1, free_locs2);
+	vpr_printf_info("BLOCKS %d   %d\n",free_blocks1, free_blocks2);
+
+	// Move blocks to available locations
+	while (free_locs1 < free_blocks1) {
+		int iblk;
+		if (toggleDim == true) {
+			for (iblk = num_free_blocks-1; iblk >= 0; iblk--) {
+				if ( (freeblock_sortx[iblk]->quadx) < (double) endx1) {
+					if ( (starty1 < freeblock_sortx[iblk]->quady) && (freeblock_sortx[iblk]->quady <= endy1) ) {
+						freeblock_sortx[iblk]->quadx = (double) endx1+0.00001;
+						break;
+					}
+				}
+			}
+		} else {
+			for (iblk = num_free_blocks-1; iblk >= 0; iblk--) {
+				if ( (freeblock_sorty[iblk]->quady) < (double) endy1) {
+					if ( (startx1 < freeblock_sorty[iblk]->quadx) && (freeblock_sorty[iblk]->quadx <= endx1) ) {
+						freeblock_sorty[iblk]->quady = (double) endy1+0.00001;
+						break;
+					}
+				}
+			}
+		}
+
+		free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
+		free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
+
+		vpr_printf_info("LOCS1 %d    %d\n",free_locs1, free_locs2);
+		vpr_printf_info("BLOCKS1 %d   %d\n",free_blocks1, free_blocks2);
+
+	}
+
+	while (free_locs2 < free_blocks2) {
+		int iblk;
+		if (toggleDim == true) {
+			for (iblk = 0; iblk < num_free_blocks; iblk++) {
+				if ( (freeblock_sortx[iblk]->quadx) > endx1) {
+					if ( (starty2 < freeblock_sortx[iblk]->quady) && (freeblock_sortx[iblk]->quady <= endy2) ) {
+						freeblock_sortx[iblk]->quadx = (double) endx1-0.00001;
+						break;
+					}
+				}
+			}
+		} else {
+			for (iblk = 0; iblk < num_free_blocks; iblk++) {
+				if ( (freeblock_sorty[iblk]->quady) > endy1) {
+					if ( (startx2 < freeblock_sorty[iblk]->quadx) && (freeblock_sorty[iblk]->quadx <= endx2) ) {
+						freeblock_sorty[iblk]->quady = (double) endy1-0.00001;
+						break;
+					}
+				}
+			}
+		}
+
+		free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
+		free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
+
+		vpr_printf_info("LOCS2 %d    %d\n",free_locs1, free_locs2);
+		vpr_printf_info("BLOCKS2 %d   %d\n",free_blocks1, free_blocks2);
+
+	}
+
+	vpr_printf_info("LOCATIONS %d   %d\n",free_locs1, free_locs2);
+
+
+	if ( toggleDim == true ) {
+		toggleDim = false;
+	} else {
+		toggleDim = true;
+	}
+
+	bool success1,success2;
+	if (free_locs1 > 1) {
+		vpr_printf_info("PARTITIONING 2  X1 %d-%d	Y1 %d-%d\n",startx1,endx1,starty1,endy1);
+		success1 = partitioning(startx1,endx1,starty1,endy1,toggleDim);
+	} else {
+		success1 = true;
+	}
+
+	if (free_locs2 > 1) {
+		vpr_printf_info("PARTITIONING 2  X2 %d-%d	Y2 %d-%d\n",startx2,endx2,starty2,endy2);
+		success2 = partitioning(startx2,endx2,starty2,endy2,toggleDim);
+	}else {
+		success2 = true;
+	}
+
+	if (success1==true && success2==true)
+		return true;
+	else {
+		vpr_printf_info("FAILED\n");
+		return false;
+	}
+}
+
+
+
+int count_free_locs(int startx, int endx, int starty, int endy) {
+	int itype,ipos;
+	int legal_pos_count = 0;
+	int legal_check_posx,legal_check_posy;
+
+	for (itype = 0; itype < num_types; itype++) {
+
+		if (itype != IO_TYPE->index) {
+
+			for (ipos = 0; ipos < num_legal_pos[itype]; ipos++) {
+
+				legal_check_posx = legal_pos[itype][ipos].x;
+				legal_check_posy = legal_pos[itype][ipos].y;
+
+				if ((startx < legal_check_posx) && (legal_check_posx <= endx)) {
+					if ((starty < legal_check_posy) && (legal_check_posy <= endy)) {
+						legal_pos_count++;
+					}
+				}
+			}
+		}
+	}
+
+	return legal_pos_count;
+}
+
+int count_free_blocks(int startx, int endx, int starty, int endy) {
+	int iblk;
+
+	int free_block_count = 0;
+	double block_checkx, block_checky;
+
+	for (iblk = 0; iblk < num_free_blocks; iblk++) {
+
+		block_checkx = freeblock[iblk]->quadx;
+		block_checky = freeblock[iblk]->quady;
+
+		if ((startx < block_checkx) && (block_checkx <= endx)) {
+			if ((starty < block_checky) && (block_checky <= endy)) {
+				free_block_count++;
+			}
+		}
+
+	}
+
+	return free_block_count;
+}
+
+
 /* RESEARCH TODO: Bounding Box and rlim need to be redone for heterogeneous to prevent a QoR penalty */
 void try_place(struct s_placer_opts placer_opts,
 		struct s_annealing_sched annealing_sched,
@@ -925,6 +1381,10 @@ void try_place(struct s_placer_opts placer_opts,
 	}
 
 	free_try_swap_arrays();
+	
+	
+	free_timing_graph(slacks);
+
 }
 
 static int count_connections() {

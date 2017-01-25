@@ -80,7 +80,19 @@ void place_and_route(enum e_operation operation,
 		/* Read the placement from a file */
 		read_place(place_file, net_file, arch_file, nx, ny, num_blocks, block);
 		sync_grid_to_blocks(num_blocks, block, nx, ny, grid);
-	} else {
+	} else if (placer_opts.place_algorithm == ANALYTICAL_PLACE){
+        begin = clock();
+        analytical_place(placer_opts, annealing_sched, chan_width_dist, router_opts,
+                det_routing_arch, segment_inf, timing_inf, directs, num_directs);
+        print_place(place_file, net_file, arch_file);
+        end = clock();
+        #ifdef CLOCKS_PER_SEC
+        vpr_printf_info("Placement took %g seconds.\n", (float)(end - begin) / CLOCKS_PER_SEC);
+        #else
+        vpr_printf_info("Placement took %g seconds.\n", (float)(end - begin) / CLK_PER_SEC);
+        #endif
+	}
+	else {
 		assert(
 				(PLACE_ONCE == placer_opts.place_freq) || (PLACE_ALWAYS == placer_opts.place_freq));
 		begin = clock();

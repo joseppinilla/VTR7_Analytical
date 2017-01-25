@@ -324,6 +324,9 @@ static void ShowPlacerOpts(INP t_options Options,
 		case PATH_TIMING_DRIVEN_PLACE:
 			vpr_printf(TIO_MESSAGE_INFO, "PATH_TIMING_DRIVEN_PLACE\n");
 			break;
+		case ANALYTICAL_PLACE:
+            vpr_printf_info("ANALYTICAL_PLACE\n");	
+			break;
 		default:
 			vpr_printf(TIO_MESSAGE_ERROR, "Unknown placement algorithm\n");
 		}

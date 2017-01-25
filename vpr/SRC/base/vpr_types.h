@@ -564,6 +564,13 @@ struct s_block {
 	int y;
 	int z;
 
+    int free_id;
+    int id;
+
+    double quadx;
+    double quady;
+
+	
 	t_pb *pb;
 
 	boolean isFixed;
@@ -630,7 +637,7 @@ struct s_annealing_sched {
 };
 
 enum e_place_algorithm {
-	BOUNDING_BOX_PLACE, NET_TIMING_DRIVEN_PLACE, PATH_TIMING_DRIVEN_PLACE
+	BOUNDING_BOX_PLACE, NET_TIMING_DRIVEN_PLACE, PATH_TIMING_DRIVEN_PLACE, ANALYTICAL_PLACE
 };
 
 struct s_placer_opts {
@@ -653,7 +660,7 @@ struct s_placer_opts {
 
 /* Various options for the placer.                                           *
  * place_algorithm:  BOUNDING_BOX_PLACE or NET_TIMING_DRIVEN_PLACE, or       *
- *                   PATH_TIMING_DRIVEN_PLACE                                *
+ *                   PATH_TIMING_DRIVEN_PLACE or ANALYTICAL_PLACE          *
  * timing_tradeoff:  When TIMING_DRIVEN_PLACE mode, what is the tradeoff     *
  *                   timing driven and BOUNDING_BOX_PLACE.                   *
  * block_dist:  Initial guess of how far apart blocks on the critical path   *

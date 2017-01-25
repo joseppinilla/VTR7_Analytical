@@ -28,7 +28,13 @@ int num_nets = 0;
 struct s_net *clb_net = NULL;
 
 int num_blocks = 0;
+int num_free_blocks = 0;
+int num_io_blocks = 0;
 struct s_block *block = NULL;
+struct s_block **freeblock = NULL;
+struct s_block **freeblock_sortx = NULL;
+struct s_block **freeblock_sorty = NULL;
+
 
 int *clb_to_vpack_net_mapping = NULL; /* [0..num_clb_nets - 1] */
 int *vpack_to_clb_net_mapping = NULL; /* [0..num_vpack_nets - 1] */

@@ -336,7 +336,7 @@ void analytical_place(
 		struct s_placer_opts placer_opts,
 		struct s_annealing_sched annealing_sched,
 		t_chan_width_dist chan_width_dist, struct s_router_opts router_opts,
-		struct s_det_routing_arch *det_routing_arch, t_segment_inf * segment_inf,
+		struct s_det_routing_arch det_routing_arch, t_segment_inf * segment_inf,
 		t_timing_inf timing_inf, t_direct_inf *directs, int num_directs) {
 
 	/* Does almost all the work of placing a circuit.  Width_fac gives the   *
@@ -366,23 +366,23 @@ void analytical_place(
 
 	width_fac = placer_opts.place_chan_width;
 
-	init_chan(width_fac, &router_opts.fixed_channel_width, chan_width_dist);
+	init_chan(width_fac, chan_width_dist);
 
 	alloc_and_load_placement_structs(
 			placer_opts.place_cost_exp,
 			&old_region_occ_x, &old_region_occ_y, placer_opts,
-			directs, num_directs, det_routing_arch->num_segment);
+			directs, num_directs);
 
 	pad_placement(placer_opts.pad_loc_type, placer_opts.pad_loc_file);
 	init_draw_coords((float) width_fac);
 
 	num_connections = count_connections();
 
-	vpr_printf_info("\n");
-	vpr_printf_info("There are %d point to point connections in this circuit.\n", num_connections);
-	vpr_printf_info("\n");
+	vpr_printf(TIO_MESSAGE_INFO,"\n");
+	vpr_printf(TIO_MESSAGE_INFO,"There are %d point to point connections in this circuit.\n", num_connections);
+	vpr_printf(TIO_MESSAGE_INFO,"\n");
 
-	vpr_printf_info("There are %d io blocks, %d free blocks and %d total blocks.\n", num_io_blocks, num_free_blocks,num_blocks);
+	vpr_printf(TIO_MESSAGE_INFO,"There are %d io blocks, %d free blocks and %d total blocks.\n", num_io_blocks, num_free_blocks,num_blocks);
 
 	double *quadratic_form;
 	double *vectorx,*vectory;
@@ -403,7 +403,7 @@ void analytical_place(
 
 	legalize_quadratic_solution();
 
-	update_screen(MAJOR, msg, PLACEMENT, false, timing_inf);
+	update_screen(MAJOR, msg, PLACEMENT, FALSE);
 
 	free_placement_structs(
 				old_region_occ_x, old_region_occ_y,
@@ -433,9 +433,9 @@ static void free_quadratic(double* matrix, double* vectorx, double* vectory, dou
 
 static void print_solution(s_block ** blocks) {
 	int i;
-	vpr_printf_info("SOLUTION\n");
+	vpr_printf(TIO_MESSAGE_INFO,"SOLUTION\n");
 	for (i = 0; i < num_free_blocks; i++) {
-		vpr_printf_info("X %f  Y  %f\n",blocks[i]->quadx,blocks[i]->quady);
+		vpr_printf(TIO_MESSAGE_INFO,"X %f  Y  %f\n",blocks[i]->quadx,blocks[i]->quady);
 	}
 }
 
@@ -606,7 +606,7 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 		endy2 = endy;
 	}
 
-	vpr_printf_info("RANGE	X1 %d-%d	Y1 %d-%d	X2 %d-%d	Y2 %d-%d\n",
+	vpr_printf(TIO_MESSAGE_INFO,"RANGE	X1 %d-%d	Y1 %d-%d	X2 %d-%d	Y2 %d-%d\n",
 			startx1,endx1,starty1,endy1,startx2,endx2,starty2,endy2);
 
 	free_locs1 = count_free_locs(startx1,endx1,starty1,endy1);
@@ -615,8 +615,8 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 	free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
 	free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
 
-	vpr_printf_info("LOCS %d    %d\n",free_locs1, free_locs2);
-	vpr_printf_info("BLOCKS %d   %d\n",free_blocks1, free_blocks2);
+	vpr_printf(TIO_MESSAGE_INFO,"LOCS %d    %d\n",free_locs1, free_locs2);
+	vpr_printf(TIO_MESSAGE_INFO,"BLOCKS %d   %d\n",free_blocks1, free_blocks2);
 
 	// Move blocks to available locations
 	while (free_locs1 < free_blocks1) {
@@ -644,8 +644,8 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 		free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
 		free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
 
-		vpr_printf_info("LOCS1 %d    %d\n",free_locs1, free_locs2);
-		vpr_printf_info("BLOCKS1 %d   %d\n",free_blocks1, free_blocks2);
+		vpr_printf(TIO_MESSAGE_INFO,"LOCS1 %d    %d\n",free_locs1, free_locs2);
+		vpr_printf(TIO_MESSAGE_INFO,"BLOCKS1 %d   %d\n",free_blocks1, free_blocks2);
 
 	}
 
@@ -674,12 +674,12 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 		free_blocks1 = count_free_blocks(startx1,endx1,starty1,endy1);
 		free_blocks2 = count_free_blocks(startx2,endx2,starty2,endy2);
 
-		vpr_printf_info("LOCS2 %d    %d\n",free_locs1, free_locs2);
-		vpr_printf_info("BLOCKS2 %d   %d\n",free_blocks1, free_blocks2);
+		vpr_printf(TIO_MESSAGE_INFO,"LOCS2 %d    %d\n",free_locs1, free_locs2);
+		vpr_printf(TIO_MESSAGE_INFO,"BLOCKS2 %d   %d\n",free_blocks1, free_blocks2);
 
 	}
 
-	vpr_printf_info("LOCATIONS %d   %d\n",free_locs1, free_locs2);
+	vpr_printf(TIO_MESSAGE_INFO,"LOCATIONS %d   %d\n",free_locs1, free_locs2);
 
 
 	if ( toggleDim == true ) {
@@ -690,14 +690,14 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 
 	bool success1,success2;
 	if (free_locs1 > 1) {
-		vpr_printf_info("PARTITIONING 2  X1 %d-%d	Y1 %d-%d\n",startx1,endx1,starty1,endy1);
+		vpr_printf(TIO_MESSAGE_INFO,"PARTITIONING 2  X1 %d-%d	Y1 %d-%d\n",startx1,endx1,starty1,endy1);
 		success1 = partitioning(startx1,endx1,starty1,endy1,toggleDim);
 	} else {
 		success1 = true;
 	}
 
 	if (free_locs2 > 1) {
-		vpr_printf_info("PARTITIONING 2  X2 %d-%d	Y2 %d-%d\n",startx2,endx2,starty2,endy2);
+		vpr_printf(TIO_MESSAGE_INFO,"PARTITIONING 2  X2 %d-%d	Y2 %d-%d\n",startx2,endx2,starty2,endy2);
 		success2 = partitioning(startx2,endx2,starty2,endy2,toggleDim);
 	}else {
 		success2 = true;
@@ -706,7 +706,7 @@ bool partitioning(int startx, int endx, int starty, int endy, bool toggleDim) {
 	if (success1==true && success2==true)
 		return true;
 	else {
-		vpr_printf_info("FAILED\n");
+		vpr_printf(TIO_MESSAGE_INFO,"FAILED\n");
 		return false;
 	}
 }
@@ -760,6 +760,104 @@ int count_free_blocks(int startx, int endx, int starty, int endy) {
 
 	return free_block_count;
 }
+
+static void pad_placement(enum e_pad_loc_type pad_loc_type, char *pad_loc_file) {
+
+	/* Randomly places the IO blocks to create an initial placement. We rely on
+	 * the legal_pos array already being loaded.  That legal_pos[itype] is an
+	 * array that gives every legal value of (x,y,z) that can accomodate a block.
+	 * The number of such locations is given by num_legal_pos[itype].
+	 */
+	int i, j, k, iblk, itype, x, y, z, ichoice;
+	int free_locations;	/* Stores how many locations there are for IO type that *might* still be free.
+						 * That is, this stores the number of entries in legal_pos[itype] that are worth considering
+						 * while looking for a free location.
+						 */
+
+	/* We'll use the grid to record where everything goes. Initialize to the grid has no
+	 * blocks placed anywhere.
+	 */
+	for (i = 0; i <= nx + 1; i++) {
+		for (j = 0; j <= ny + 1; j++) {
+			grid[i][j].usage = 0;
+			itype = grid[i][j].type->index;
+			for (k = 0; k < type_descriptors[itype].capacity; k++) {
+				grid[i][j].blocks[k] = OPEN;
+			}
+		}
+	}
+
+	/* Next iterations only care about IO type */
+	itype = IO_TYPE->index;
+	free_locations = num_legal_pos[itype];
+
+	/* Similarly, mark all blocks as not being placed yet. */
+	for (iblk = 0; iblk < num_blocks; iblk++) {
+		if (block[iblk].type == IO_TYPE) {
+
+			if (free_locations <= 0) {
+				vpr_printf (TIO_MESSAGE_ERROR, __FILE__, __LINE__,"Could not place IO block %s (#%d); no free locations of type IO_TYPE (#%d).\n", block[iblk].name, iblk, itype);
+				exit(1);
+			}
+
+			ichoice = my_irand(free_locations - 1);
+			x = legal_pos[itype][ichoice].x;
+			y = legal_pos[itype][ichoice].y;
+			z = legal_pos[itype][ichoice].z;
+
+			// Make sure that the position is OPEN before placing the block down
+			assert (grid[x][y].blocks[z] == OPEN);
+
+			grid[x][y].blocks[z] = iblk;
+			grid[x][y].usage++;
+
+			block[iblk].x = x;
+			block[iblk].y = y;
+			block[iblk].z = z;
+
+			block[iblk].isFixed = TRUE;
+
+			/* Ensure randomizer doesn't pick this location again, since it's occupied. Could shift all the
+			 * legal positions in legal_pos to remove the entry (choice) we just used, but faster to
+			 * just move the last entry in legal_pos to the spot we just used and decrement the
+			 * count of free_locations.
+			 */
+			legal_pos[itype][ichoice] = legal_pos[itype][free_locations - 1]; /* overwrite used block position */
+			free_locations--;
+
+			// Count IO blocks
+			num_io_blocks++;
+
+		} else {
+			block[iblk].x = -1;
+			block[iblk].y = -1;
+			block[iblk].z = -1;
+
+			// Count Free blocks
+			num_free_blocks++;
+
+		}
+	}
+
+
+	if ((freeblock =  (struct s_block **) calloc( num_free_blocks,sizeof(struct s_block*))) == NULL ) {
+		//TODO: Throw error
+	}
+
+	i=0;
+	for (iblk = 0; iblk < num_blocks; iblk++) {
+		if (block[iblk].type != IO_TYPE) {
+			block[iblk].free_id = i;
+			block[iblk].id = iblk;
+			freeblock[i++] = &block[iblk];
+		}
+	}
+
+	/* Restore legal_pos */
+	load_legal_placements();
+
+}
+
 
 
 /* RESEARCH TODO: Bounding Box and rlim need to be redone for heterogeneous to prevent a QoR penalty */

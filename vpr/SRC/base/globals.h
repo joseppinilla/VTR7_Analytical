@@ -35,6 +35,7 @@ extern int num_nets;
 extern struct s_net *clb_net;
 
 /* blocks in the user netlist */
+extern int num_blocks;
 extern int num_io_blocks;
 extern int num_free_blocks;
 extern struct s_block *block;

@@ -87,9 +87,9 @@ void place_and_route(enum e_operation operation,
         print_place(place_file, net_file, arch_file);
         end = clock();
         #ifdef CLOCKS_PER_SEC
-        vpr_printf_info("Placement took %g seconds.\n", (float)(end - begin) / CLOCKS_PER_SEC);
+        vpr_printf(TIO_MESSAGE_INFO,"Placement took %g seconds.\n", (float)(end - begin) / CLOCKS_PER_SEC);
         #else
-        vpr_printf_info("Placement took %g seconds.\n", (float)(end - begin) / CLK_PER_SEC);
+        vpr_printf(TIO_MESSAGE_INFO,"Placement took %g seconds.\n", (float)(end - begin) / CLK_PER_SEC);
         #endif
 	}
 	else {
